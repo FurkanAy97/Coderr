@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from coderr_app.models import UserProfile
+from coderr_app.models import Offer, OfferDetail, UserProfile
 
 
 class RegistrationSerializer(serializers.Serializer):
@@ -64,3 +64,71 @@ class LoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError("Invalid username or password")
 
         return data
+
+
+
+class OfferDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OfferDetail
+        fields = [
+            "id",
+            "title",
+            "revisions",
+            "delivery_time_in_days",
+            "price",
+            "features",
+            "offer_type",
+        ]
+        read_only_fields = ["id"]
+
+
+class OfferUserDetailsSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source="user.username", read_only=True)
+
+    class Meta:
+        model = UserProfile
+        fields = ["first_name", "last_name", "username"]
+
+
+class OfferSerializer(serializers.ModelSerializer):
+    user = serializers.IntegerField(source="user_details.user_id", read_only=True)
+    user_details = OfferUserDetailsSerializer(read_only=True)
+    details = OfferDetailSerializer(many=True)
+    min_price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+        allow_null=True,
+        coerce_to_string=False,
+    )
+    min_delivery_time = serializers.IntegerField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = Offer
+        fields = [
+            "id",
+            "user",
+            "title",
+            "image",
+            "description",
+            "created_at",
+            "updated_at",
+            "details",
+            "min_price",
+            "min_delivery_time",
+            "user_details",
+        ]
+        read_only_fields = ["id", "user", "created_at", "updated_at", "user_details"]
+
+    def validate_details(self, value):
+        if len(value) != 3:
+            raise serializers.ValidationError("An offer must contain exactly 3 details.")
+        return value
+
+    def create(self, validated_data):
+        details_data = validated_data.pop("details")
+        offer = Offer.objects.create(**validated_data)
+        OfferDetail.objects.bulk_create(
+            [OfferDetail(offer=offer, **detail_data) for detail_data in details_data]
+        )
+        return offer

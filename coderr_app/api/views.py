@@ -3,6 +3,9 @@ from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import authenticate
 from .serializer import RegistrationSerializer, LoginSerializer
 from coderr_app.models import UserProfile
@@ -61,17 +64,37 @@ class LoginView(APIView):
 
 
 class ProfileView(viewsets.ViewSet):
+    authentication_classes = [TokenAuthentication]
+
+    def get_permissions(self):
+        if self.action in ("retrieve", "partial_update"):
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
+    def list(self, request):
+        profiles = UserProfile.objects.all().select_related("user")
+        return Response(
+            [self._profile_data(profile) for profile in profiles],
+            status=status.HTTP_200_OK,
+        )
+
     def retrieve(self, request, pk=None):
         try:
-            profile = UserProfile.objects.get(pk=pk)
+            profile = UserProfile.objects.get(user_id=pk)
         except UserProfile.DoesNotExist:
-            return Response({"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Profile not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-        data = {
-            "user_id": profile.user.id,
+        return Response(self._profile_data(profile), status=status.HTTP_200_OK)
+
+    def _profile_data(self, profile):
+        return {
+            "user": profile.user.id,
             "username": profile.user.username,
             "email": profile.user.email,
-            "user_type": profile.user_type,
+            "type": profile.user_type,
             "first_name": profile.first_name,
             "last_name": profile.last_name,
             "location": profile.location,
@@ -79,11 +102,28 @@ class ProfileView(viewsets.ViewSet):
             "description": profile.description,
             "working_hours": profile.working_hours,
         }
-        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path="business")
+    def business(self, request):
+        profiles = UserProfile.objects.filter(
+            user_type="business").select_related("user")
+        return Response(
+            [self._profile_data(profile) for profile in profiles],
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["get"], url_path="customer")
+    def customer(self, request):
+        profiles = UserProfile.objects.filter(
+            user_type="customer").select_related("user")
+        return Response(
+            [self._profile_data(profile) for profile in profiles],
+            status=status.HTTP_200_OK,
+        )
 
     def partial_update(self, request, pk=None):
         try:
-            profile = UserProfile.objects.get(pk=pk)
+            profile = UserProfile.objects.get(user_id=pk)
         except UserProfile.DoesNotExist:
             return Response(
                 {"error": "Profile not found"},
