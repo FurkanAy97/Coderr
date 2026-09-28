@@ -65,11 +65,7 @@ class LoginView(APIView):
 
 class ProfileView(viewsets.ViewSet):
     authentication_classes = [TokenAuthentication]
-
-    def get_permissions(self):
-        if self.action in ("retrieve", "partial_update"):
-            return [IsAuthenticated()]
-        return super().get_permissions()
+    permission_classes = [IsAuthenticated]
 
     def list(self, request):
         profiles = UserProfile.objects.all().select_related("user")
