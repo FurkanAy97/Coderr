@@ -6,7 +6,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from coderr_app.api.serializer import OfferSerializer
-from coderr_app.models import UserProfile
+from coderr_app.models import Offer, OfferDetail, UserProfile
 
 
 class OfferSerializerTests(APITestCase):
@@ -73,6 +73,87 @@ class OfferSerializerTests(APITestCase):
 
 		self.assertFalse(serializer.is_valid())
 		self.assertIn("details", serializer.errors)
+
+
+class OfferListViewSetTests(APITestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(
+			username="business_owner",
+			email="owner@example.com",
+			password="test-password",
+		)
+		self.profile = UserProfile.objects.create(
+			user=self.user,
+			user_type="business",
+		)
+		self.cheaper_offer = self.create_offer(
+			"Logo Design",
+			[("basic", 100, 5), ("standard", 200, 7), ("premium", 500, 10)],
+		)
+		self.expensive_offer = self.create_offer(
+			"Website Design",
+			[("basic", 250, 4), ("standard", 400, 8), ("premium", 800, 12)],
+		)
+		self.url = reverse("offers-list")
+
+	def create_offer(self, title, detail_values):
+		offer = Offer.objects.create(
+			title=title,
+			description=f"Beschreibung für {title}",
+			user_details=self.profile,
+		)
+		OfferDetail.objects.bulk_create(
+			[
+				OfferDetail(
+					offer=offer,
+					title=offer_type.title(),
+					revisions=2,
+					delivery_time_in_days=delivery_time,
+					price=price,
+					features=["Design"],
+					offer_type=offer_type,
+				)
+				for offer_type, price, delivery_time in detail_values
+			]
+		)
+		return offer
+
+	def test_returns_paginated_offers_with_calculated_values(self):
+		response = self.client.get(self.url, {"page_size": 1})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["count"], 2)
+		self.assertIsNotNone(response.data["next"])
+		self.assertEqual(len(response.data["results"]), 1)
+		self.assertEqual(response.data["results"][0]["title"], "Website Design")
+		self.assertEqual(response.data["results"][0]["min_price"], 250)
+		self.assertEqual(response.data["results"][0]["min_delivery_time"], 4)
+
+	def test_filters_by_minimum_price_and_search_text(self):
+		response = self.client.get(
+			self.url,
+			{"min_price": "200", "search": "website"},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["count"], 1)
+		self.assertEqual(response.data["results"][0]["title"], "Website Design")
+
+	def test_orders_by_public_min_price_parameter(self):
+		response = self.client.get(self.url, {"ordering": "min_price"})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["results"][0]["title"], "Logo Design")
+
+	def test_rejects_invalid_query_parameters(self):
+		response = self.client.get(self.url, {"creator_id": "abc"})
+
+		self.assertEqual(response.status_code, 400)
+		self.assertIn("creator_id", response.data)
+
+		response = self.client.get(self.url, {"page_size": "not-a-number"})
+		self.assertEqual(response.status_code, 400)
+		self.assertIn("page_size", response.data)
 
 
 class ProfileViewTests(APITestCase):

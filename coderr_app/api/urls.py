@@ -12,6 +12,7 @@ router.register(r"profiles", views.ProfileView, basename="profiles")
 urlpatterns = [
     path("registration/", views.RegistrationView.as_view(), name="registration"),
     path("login/", views.LoginView.as_view(), name="login"),
+    path("offers/", views.OfferListView.as_view(), name="offers-list"),
     path(
         "profile/<int:pk>/",
         views.ProfileView.as_view(

@@ -1,14 +1,18 @@
-from rest_framework import status
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import generics, status, viewsets
 from rest_framework.authtoken.models import Token
+from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import viewsets
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from django.db.models import Min
 from django.contrib.auth import authenticate
-from .serializer import RegistrationSerializer, LoginSerializer
-from coderr_app.models import UserProfile
+from .filters import OfferFilter
+from .pagination import OfferPagination
+from .serializer import OfferSerializer, RegistrationSerializer, LoginSerializer
+from coderr_app.models import Offer, UserProfile
 
 
 class RegistrationView(APIView):
@@ -142,4 +146,20 @@ class ProfileView(viewsets.ViewSet):
         return Response(
             {"message": "Profile updated successfully"},
             status=status.HTTP_200_OK,
+        )
+        
+class OfferListView(generics.ListAPIView):
+    serializer_class = OfferSerializer
+    filterset_class = OfferFilter
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    search_fields = ["title", "description"]
+    pagination_class = OfferPagination
+
+    def get_queryset(self):
+        return Offer.objects.annotate(
+            _min_price=Min("details__price"),
+            _min_delivery_time=Min("details__delivery_time_in_days"),
+        ).select_related("user_details__user").prefetch_related("details").order_by(
+            "-created_at",
+            "-pk",
         )

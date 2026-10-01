@@ -94,14 +94,8 @@ class OfferSerializer(serializers.ModelSerializer):
     user = serializers.IntegerField(source="user_details.user_id", read_only=True)
     user_details = OfferUserDetailsSerializer(read_only=True)
     details = OfferDetailSerializer(many=True)
-    min_price = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        read_only=True,
-        allow_null=True,
-        coerce_to_string=False,
-    )
-    min_delivery_time = serializers.IntegerField(read_only=True, allow_null=True)
+    min_price = serializers.SerializerMethodField()
+    min_delivery_time = serializers.SerializerMethodField()
 
     class Meta:
         model = Offer
@@ -124,6 +118,16 @@ class OfferSerializer(serializers.ModelSerializer):
         if len(value) != 3:
             raise serializers.ValidationError("An offer must contain exactly 3 details.")
         return value
+
+    def get_min_price(self, offer):
+        if hasattr(offer, "_min_price"):
+            return offer._min_price
+        return offer.min_price
+
+    def get_min_delivery_time(self, offer):
+        if hasattr(offer, "_min_delivery_time"):
+            return offer._min_delivery_time
+        return offer.min_delivery_time
 
     def create(self, validated_data):
         details_data = validated_data.pop("details")
