@@ -1,16 +1,17 @@
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import generics, status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.db.models import Min
 from django.contrib.auth import authenticate
 from .filters import OfferFilter
 from .pagination import OfferPagination
+from .permissions import IsBusinessProfile
 from .serializer import OfferSerializer, RegistrationSerializer, LoginSerializer
 from coderr_app.models import Offer, UserProfile
 
@@ -148,12 +149,23 @@ class ProfileView(viewsets.ViewSet):
             status=status.HTTP_200_OK,
         )
         
-class OfferListView(generics.ListAPIView):
+class OfferViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
+    authentication_classes = [TokenAuthentication]
+    throttle_classes = []
     serializer_class = OfferSerializer
     filterset_class = OfferFilter
     filter_backends = [DjangoFilterBackend, SearchFilter]
     search_fields = ["title", "description"]
     pagination_class = OfferPagination
+
+    def get_permissions(self):
+        if self.action == "list":
+            permission_classes = [AllowAny]
+        elif self.action == "create":
+            permission_classes = [IsAuthenticated, IsBusinessProfile]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         return Offer.objects.annotate(
@@ -163,3 +175,6 @@ class OfferListView(generics.ListAPIView):
             "-created_at",
             "-pk",
         )
+
+    def perform_create(self, serializer):
+        serializer.save(user_details=self.request.user.profile)

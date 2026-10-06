@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.db import transaction
 from rest_framework import serializers
 
 from coderr_app.models import Offer, OfferDetail, UserProfile
@@ -114,6 +115,19 @@ class OfferSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "user", "created_at", "updated_at", "user_details"]
 
+    def validate_title(self, value):
+        request = self.context.get("request")
+        if request and request.method == "POST" and request.user.is_authenticated:
+            profile = getattr(request.user, "profile", None)
+            if profile and Offer.objects.filter(
+                user_details=profile,
+                title__iexact=value,
+            ).exists():
+                raise serializers.ValidationError(
+                    "You already have an offer with this title."
+                )
+        return value
+
     def validate_details(self, value):
         if len(value) != 3:
             raise serializers.ValidationError("An offer must contain exactly 3 details.")
@@ -129,6 +143,7 @@ class OfferSerializer(serializers.ModelSerializer):
             return offer._min_delivery_time
         return offer.min_delivery_time
 
+    @transaction.atomic
     def create(self, validated_data):
         details_data = validated_data.pop("details")
         offer = Offer.objects.create(**validated_data)

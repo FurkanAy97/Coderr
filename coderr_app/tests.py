@@ -155,6 +155,80 @@ class OfferListViewSetTests(APITestCase):
 		self.assertEqual(response.status_code, 400)
 		self.assertIn("page_size", response.data)
 
+	def test_post_requires_authentication(self):
+		response = self.client.post(self.url, self.offer_payload(), format="json")
+		self.assertEqual(response.status_code, 401)
+
+	def test_customer_cannot_create_offer(self):
+		customer = User.objects.create_user(
+			username="customer_user",
+			email="customer@example.com",
+			password="test-password",
+		)
+		UserProfile.objects.create(user=customer, user_type="customer")
+		token = Token.objects.create(user=customer)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+		response = self.client.post(self.url, self.offer_payload(), format="json")
+		self.assertEqual(response.status_code, 403)
+
+	def test_business_user_can_create_offer_with_three_details(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+		response = self.client.post(self.url, self.offer_payload(), format="json")
+
+		self.assertEqual(response.status_code, 201)
+		self.assertEqual(response.data["user"], self.user.pk)
+		self.assertEqual(len(response.data["details"]), 3)
+		self.assertEqual(Offer.objects.count(), 3)
+
+	def test_business_user_cannot_create_duplicate_offer_title(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		payload = self.offer_payload()
+
+		first_response = self.client.post(self.url, payload, format="json")
+		second_response = self.client.post(self.url, payload, format="json")
+
+		self.assertEqual(first_response.status_code, 201)
+		self.assertEqual(second_response.status_code, 400)
+		self.assertIn("title", second_response.data)
+		self.assertEqual(Offer.objects.count(), 3)
+
+	def offer_payload(self):
+		return {
+			"title": "New Design Offer",
+			"image": None,
+			"description": "Design package",
+			"details": [
+				{
+					"title": "Basic",
+					"revisions": 2,
+					"delivery_time_in_days": 5,
+					"price": "100.00",
+					"features": ["Logo"],
+					"offer_type": "basic",
+				},
+				{
+					"title": "Standard",
+					"revisions": 5,
+					"delivery_time_in_days": 7,
+					"price": "200.00",
+					"features": ["Logo", "Briefpapier"],
+					"offer_type": "standard",
+				},
+				{
+					"title": "Premium",
+					"revisions": 10,
+					"delivery_time_in_days": 10,
+					"price": "500.00",
+					"features": ["Logo", "Flyer"],
+					"offer_type": "premium",
+				},
+			],
+		}
+
 
 class ProfileViewTests(APITestCase):
 	def setUp(self):
