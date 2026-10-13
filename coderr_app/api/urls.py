@@ -11,6 +11,7 @@ router.register(r"offers", views.OfferViewSet, basename="offers")
 
 
 urlpatterns = [
+    path("", include(router.urls)),
     path("registration/", views.RegistrationView.as_view(), name="registration"),
     path("login/", views.LoginView.as_view(), name="login"),
     path(
@@ -20,5 +21,4 @@ urlpatterns = [
         ),
         name="profile-detail",
     ),
-    path("", include(router.urls)),
 ]
