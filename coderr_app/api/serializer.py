@@ -69,6 +69,8 @@ class LoginSerializer(serializers.Serializer):
 
 
 class OfferDetailSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+
     class Meta:
         model = OfferDetail
         fields = [
@@ -117,20 +119,61 @@ class OfferSerializer(serializers.ModelSerializer):
 
     def validate_title(self, value):
         request = self.context.get("request")
-        if request and request.method == "POST" and request.user.is_authenticated:
+        if (
+            request
+            and request.method in ("POST", "PUT", "PATCH")
+            and request.user.is_authenticated
+        ):
             profile = getattr(request.user, "profile", None)
-            if profile and Offer.objects.filter(
-                user_details=profile,
-                title__iexact=value,
-            ).exists():
-                raise serializers.ValidationError(
-                    "You already have an offer with this title."
+            if profile:
+                matching_offers = Offer.objects.filter(
+                    user_details=profile,
+                    title__iexact=value,
                 )
+                if self.instance:
+                    matching_offers = matching_offers.exclude(pk=self.instance.pk)
+                if matching_offers.exists():
+                    raise serializers.ValidationError(
+                        "You already have an offer with this title."
+                    )
         return value
 
     def validate_details(self, value):
-        if len(value) != 3:
-            raise serializers.ValidationError("An offer must contain exactly 3 details.")
+        if self.instance is None:
+            if len(value) != 3:
+                raise serializers.ValidationError(
+                    "An offer must contain exactly 3 details."
+                )
+            if any("id" in detail_data for detail_data in value):
+                raise serializers.ValidationError(
+                    "Detail IDs are assigned by the server when creating an offer."
+                )
+            return value
+
+        if not value:
+            raise serializers.ValidationError("Provide at least one detail to update.")
+
+        existing_ids = set(self.instance.details.values_list("id", flat=True))
+        received_ids = set()
+        for detail_data in value:
+            detail_id = detail_data.get("id")
+            if detail_id is None:
+                raise serializers.ValidationError(
+                    "Each detail update must include its id."
+                )
+            if detail_id not in existing_ids:
+                raise serializers.ValidationError(
+                    f"Detail {detail_id} does not belong to this offer."
+                )
+            if detail_id in received_ids:
+                raise serializers.ValidationError(
+                    f"Detail {detail_id} was included more than once."
+                )
+            if len(detail_data) == 1:
+                raise serializers.ValidationError(
+                    f"Provide at least one field to update for detail {detail_id}."
+                )
+            received_ids.add(detail_id)
         return value
 
     def get_min_price(self, offer):
@@ -151,3 +194,24 @@ class OfferSerializer(serializers.ModelSerializer):
             [OfferDetail(offer=offer, **detail_data) for detail_data in details_data]
         )
         return offer
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        details_data = validated_data.pop("details", None)
+
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+
+        if details_data is not None:
+            for detail_data in details_data:
+                detail_id = detail_data.pop("id")
+                OfferDetail.objects.filter(
+                    offer=instance,
+                    pk=detail_id,
+                ).update(**detail_data)
+            instance.__dict__.pop("_min_price", None)
+            instance.__dict__.pop("_min_delivery_time", None)
+            getattr(instance, "_prefetched_objects_cache", {}).pop("details", None)
+
+        return instance

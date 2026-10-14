@@ -8,6 +8,7 @@ from . import views
 router = DefaultRouter()
 router.register(r"profiles", views.ProfileView, basename="profiles")
 router.register(r"offers", views.OfferViewSet, basename="offers")
+router.register(r"offerdetails", views.OfferDetailViewSet, basename="offerdetails")
 
 
 urlpatterns = [

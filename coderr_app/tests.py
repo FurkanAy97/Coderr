@@ -196,6 +196,104 @@ class OfferListViewSetTests(APITestCase):
 		self.assertIn("title", second_response.data)
 		self.assertEqual(Offer.objects.count(), 3)
 
+	def test_offer_detail_get_is_public(self):
+		url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+
+		response = self.client.get(url)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["id"], self.expensive_offer.pk)
+		self.assertEqual(response.data["title"], "Website Design")
+
+	def test_offerdetail_get_is_public(self):
+		offer_detail = self.expensive_offer.details.first()
+		url = reverse("offerdetails-detail", kwargs={"pk": offer_detail.pk})
+
+		response = self.client.get(url)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["id"], offer_detail.pk)
+		self.assertEqual(response.data["offer_type"], "basic")
+
+	def test_business_owner_can_patch_offer(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+
+		response = self.client.patch(
+			url,
+			{"title": "Updated Website Design"},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.expensive_offer.refresh_from_db()
+		self.assertEqual(self.expensive_offer.title, "Updated Website Design")
+
+	def test_business_owner_can_patch_one_offer_detail_without_changing_others(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+		basic_detail = self.expensive_offer.details.get(offer_type="basic")
+		standard_detail = self.expensive_offer.details.get(offer_type="standard")
+
+		response = self.client.patch(
+			url,
+			{"details": [{"id": basic_detail.pk, "price": "80.00"}]},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(len(response.data["details"]), 3)
+		self.assertEqual(response.data["min_price"], 80)
+		basic_detail.refresh_from_db()
+		standard_detail.refresh_from_db()
+		self.assertEqual(basic_detail.price, Decimal("80.00"))
+		self.assertEqual(standard_detail.price, Decimal("400.00"))
+
+	def test_other_business_cannot_patch_or_delete_offer(self):
+		other_user = User.objects.create_user(
+			username="other_business",
+			email="other@example.com",
+			password="test-password",
+		)
+		UserProfile.objects.create(user=other_user, user_type="business")
+		token = Token.objects.create(user=other_user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+
+		patch_response = self.client.patch(
+			url,
+			{"title": "Stolen Offer"},
+			format="json",
+		)
+		delete_response = self.client.delete(url)
+
+		self.assertEqual(patch_response.status_code, 403)
+		self.assertEqual(delete_response.status_code, 403)
+
+	def test_business_owner_can_delete_offer_and_its_details(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		offer_id = self.expensive_offer.pk
+		detail_ids = list(self.expensive_offer.details.values_list("pk", flat=True))
+		url = reverse("offers-detail", kwargs={"pk": offer_id})
+
+		response = self.client.delete(url)
+
+		self.assertEqual(response.status_code, 204)
+		self.assertFalse(Offer.objects.filter(pk=offer_id).exists())
+		self.assertFalse(OfferDetail.objects.filter(pk__in=detail_ids).exists())
+
+	def test_put_is_not_enabled(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+
+		response = self.client.put(url, {"title": "Replacement"}, format="json")
+
+		self.assertEqual(response.status_code, 405)
+
 	def offer_payload(self):
 		return {
 			"title": "New Design Offer",

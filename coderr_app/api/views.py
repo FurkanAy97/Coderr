@@ -11,9 +11,14 @@ from django.db.models import Min
 from django.contrib.auth import authenticate
 from .filters import OfferFilter
 from .pagination import OfferPagination
-from .permissions import IsBusinessProfile
-from .serializer import OfferSerializer, RegistrationSerializer, LoginSerializer
-from coderr_app.models import Offer, UserProfile
+from .permissions import IsBusinessProfile, OfferPermission
+from .serializer import (
+    OfferDetailSerializer,
+    OfferSerializer,
+    RegistrationSerializer,
+    LoginSerializer,
+)
+from coderr_app.models import Offer, OfferDetail, UserProfile
 
 
 class RegistrationView(APIView):
@@ -148,24 +153,25 @@ class ProfileView(viewsets.ViewSet):
             {"message": "Profile updated successfully"},
             status=status.HTTP_200_OK,
         )
-        
-class OfferViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
+
+
+class OfferViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
     authentication_classes = [TokenAuthentication]
+    permission_classes = [OfferPermission]
     throttle_classes = []
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     serializer_class = OfferSerializer
     filterset_class = OfferFilter
     filter_backends = [DjangoFilterBackend, SearchFilter]
     search_fields = ["title", "description"]
     pagination_class = OfferPagination
-
-    def get_permissions(self):
-        if self.action == "list":
-            permission_classes = [AllowAny]
-        elif self.action == "create":
-            permission_classes = [IsAuthenticated, IsBusinessProfile]
-        else:
-            permission_classes = [IsAuthenticated]
-        return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         return Offer.objects.annotate(
@@ -178,3 +184,11 @@ class OfferViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, viewsets.Gene
 
     def perform_create(self, serializer):
         serializer.save(user_details=self.request.user.profile)
+
+
+class OfferDetailViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [AllowAny]
+    throttle_classes = []
+    queryset = OfferDetail.objects.select_related("offer")
+    serializer_class = OfferDetailSerializer
