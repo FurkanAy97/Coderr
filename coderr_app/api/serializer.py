@@ -19,6 +19,11 @@ class RegistrationSerializer(serializers.Serializer):
             raise serializers.ValidationError("Email is already in use")
         return value
 
+    def validate_username(self, value):
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError("Username is already in use")
+        return value
+
     def validate(self, data):
         if data["password"] != data["repeated_password"]:
             raise serializers.ValidationError(

@@ -188,7 +188,7 @@ class OfferViewSet(
 
 class OfferDetailViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     authentication_classes = [TokenAuthentication]
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     throttle_classes = []
     queryset = OfferDetail.objects.select_related("offer")
     serializer_class = OfferDetailSerializer
