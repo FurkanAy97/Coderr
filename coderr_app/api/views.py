@@ -103,10 +103,13 @@ class ProfileView(viewsets.ViewSet):
             "type": profile.user_type,
             "first_name": profile.first_name,
             "last_name": profile.last_name,
+            "file": profile.file.url if profile.file else None,
             "location": profile.location,
             "tel": profile.tel,
             "description": profile.description,
             "working_hours": profile.working_hours,
+            "created_at": profile.created_at,
+            "updated_at": profile.updated_at,
         }
 
     @action(detail=False, methods=["get"], url_path="business")

@@ -16,10 +16,13 @@ class UserProfile(models.Model):
     )
     first_name = models.CharField(max_length=30, blank=True)
     last_name = models.CharField(max_length=30, blank=True)
+    file = models.FileField(upload_to="user_files/", blank=True, null=True)
     location = models.CharField(max_length=100, blank=True)
     tel = models.CharField(max_length=20, blank=True)
     description = models.TextField(blank=True)
     working_hours = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "User Profile"
