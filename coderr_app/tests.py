@@ -354,3 +354,16 @@ class ProfileViewTests(APITestCase):
 		self.assertEqual(response.data["user"], self.user.pk)
 		self.assertEqual(response.data["type"], "customer")
 		self.assertEqual(response.data["first_name"], "Casey")
+
+	def test_partial_update_forbidden_for_user_without_profile(self):
+		other_user = User.objects.create_user(
+			username="other",
+			email="other@example.com",
+			password="test-password",
+		)
+		token = Token.objects.create(user=other_user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+		response = self.client.patch(self.url, {"first_name": "Changed"})
+
+		self.assertEqual(response.status_code, 403)

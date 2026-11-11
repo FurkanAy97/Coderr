@@ -139,21 +139,32 @@ class ProfileView(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if profile.user_id != request.user.id:
+            return Response(
+                {"error": "You can only update your own profile"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         for field in [
             "first_name",
             "last_name",
             "location",
+            'email',
             "tel",
             "description",
             "working_hours",
         ]:
             if field in request.data:
-                setattr(profile, field, request.data[field])
+                if field == 'email':
+                    profile.user.email = request.data[field]
+                    profile.user.save()
+                else:
+                    setattr(profile, field, request.data[field])
 
         profile.save()
 
         return Response(
-            {"message": "Profile updated successfully"},
+            self._profile_data(profile),
             status=status.HTTP_200_OK,
         )
 
