@@ -6,7 +6,6 @@ from . import views
 
 
 router = DefaultRouter()
-router.register(r"profiles", views.ProfileView, basename="profiles")
 router.register(r"offers", views.OfferViewSet, basename="offers")
 router.register(r"offerdetails", views.OfferDetailViewSet, basename="offerdetails")
 
@@ -21,5 +20,15 @@ urlpatterns = [
             {"get": "retrieve", "patch": "partial_update"}
         ),
         name="profile-detail",
+    ),
+    path(
+        "profiles/business/",
+        views.ProfileView.as_view({"get": "business"}),
+        name="profiles-business",
+    ),
+    path(
+        "profiles/customer/",
+        views.ProfileView.as_view({"get": "customer"}),
+        name="profiles-customer",
     ),
 ]

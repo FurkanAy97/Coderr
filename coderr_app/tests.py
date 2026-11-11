@@ -367,3 +367,24 @@ class ProfileViewTests(APITestCase):
 		response = self.client.patch(self.url, {"first_name": "Changed"})
 
 		self.assertEqual(response.status_code, 403)
+
+	def test_profile_list_routes_and_removed_plural_routes(self):
+		business = User.objects.create_user(username="business", password="test-password")
+		UserProfile.objects.create(user=business, user_type="business")
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+		for url, expected_user in [
+			("/api/profiles/business/", business),
+			("/api/profiles/customer/", self.user),
+		]:
+			with self.subTest(url=url):
+				response = self.client.get(url)
+				self.assertEqual(response.status_code, 200)
+				self.assertEqual([profile["user"] for profile in response.data], [expected_user.pk])
+				self.assertEqual(self.client.patch(url, {}).status_code, 405)
+
+		for url in ["/api/profiles/", f"/api/profiles/{self.user.pk}/"]:
+			with self.subTest(url=url):
+				self.assertEqual(self.client.get(url).status_code, 404)
+				self.assertEqual(self.client.patch(url, {}).status_code, 404)
