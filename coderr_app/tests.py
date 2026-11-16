@@ -129,6 +129,27 @@ class OfferListViewSetTests(APITestCase):
 		self.assertEqual(response.data["results"][0]["min_price"], 250)
 		self.assertEqual(response.data["results"][0]["min_delivery_time"], 4)
 
+	def test_offer_list_and_detail_contain_detail_links(self):
+		list_response = self.client.get(self.url)
+		detail_url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		detail_response = self.client.get(detail_url)
+
+		self.assertEqual(list_response.status_code, 200)
+		self.assertEqual(detail_response.status_code, 200)
+		list_offer = next(
+			offer for offer in list_response.data["results"]
+			if offer["id"] == self.expensive_offer.pk
+		)
+		expected = {
+			detail.pk: "http://testserver" + reverse("offerdetails-detail", kwargs={"pk": detail.pk})
+			for detail in self.expensive_offer.details.all()
+		}
+		for details in [list_offer["details"], detail_response.data["details"]]:
+			self.assertTrue(all(set(detail) == {"id", "url"} for detail in details))
+			self.assertEqual({detail["id"]: detail["url"] for detail in details}, expected)
+
 	def test_filters_by_minimum_price_and_search_text(self):
 		response = self.client.get(
 			self.url,
@@ -196,24 +217,80 @@ class OfferListViewSetTests(APITestCase):
 		self.assertIn("title", second_response.data)
 		self.assertEqual(Offer.objects.count(), 3)
 
-	def test_offer_detail_get_is_public(self):
+	def test_offer_detail_get_requires_authentication(self):
 		url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
 
+		self.assertEqual(self.client.get(url).status_code, 401)
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
 		response = self.client.get(url)
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.data["id"], self.expensive_offer.pk)
 		self.assertEqual(response.data["title"], "Website Design")
 
-	def test_offerdetail_get_is_public(self):
+	def test_offerdetail_get_requires_authentication(self):
 		offer_detail = self.expensive_offer.details.first()
 		url = reverse("offerdetails-detail", kwargs={"pk": offer_detail.pk})
 
+		self.assertEqual(self.client.get(url).status_code, 401)
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
 		response = self.client.get(url)
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.data["id"], offer_detail.pk)
 		self.assertEqual(response.data["offer_type"], "basic")
+
+	def test_revisions_delivery_and_numeric_prices_in_offer_endpoints(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		payload = self.offer_payload()
+		payload["details"][0].update(revisions=-1, delivery_time_in_days=1, price=120.50)
+
+		response = self.client.post(self.url, payload, format="json")
+
+		self.assertEqual(response.status_code, 201)
+		basic = next(detail for detail in response.json()["details"] if detail["offer_type"] == "basic")
+		self.assertEqual(basic["revisions"], -1)
+		self.assertEqual(basic["delivery_time_in_days"], 1)
+		self.assertIsInstance(basic["price"], (int, float))
+		self.assertEqual(basic["price"], 120.5)
+
+		detail_url = reverse("offerdetails-detail", kwargs={"pk": basic["id"]})
+		detail_response = self.client.get(detail_url)
+		self.assertEqual(detail_response.status_code, 200)
+		self.assertEqual(detail_response.json()["price"], 120.5)
+		self.assertIsInstance(detail_response.json()["price"], (int, float))
+
+		offer_url = reverse("offers-detail", kwargs={"pk": response.data["id"]})
+		patch_response = self.client.patch(
+			offer_url,
+			{"details": [{"offer_type": "standard", "revisions": -1, "price": "99.25"}]},
+			format="json",
+		)
+		self.assertEqual(patch_response.status_code, 200)
+		standard = next(detail for detail in patch_response.json()["details"] if detail["offer_type"] == "standard")
+		self.assertEqual(standard["revisions"], -1)
+		self.assertEqual(standard["price"], 99.25)
+		self.assertIsInstance(standard["price"], (int, float))
+
+	def test_rejects_revisions_below_minus_one_and_nonpositive_delivery(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		offer_url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+
+		for field, value in [("revisions", -2), ("delivery_time_in_days", 0), ("delivery_time_in_days", -1)]:
+			with self.subTest(field=field, value=value):
+				payload = self.offer_payload()
+				payload["details"][0][field] = value
+				self.assertEqual(self.client.post(self.url, payload, format="json").status_code, 400)
+				self.assertEqual(
+					self.client.patch(
+						offer_url, {"details": [{"offer_type": "basic", field: value}]}, format="json"
+					).status_code,
+					400,
+				)
 
 	def test_business_owner_can_patch_offer(self):
 		token = Token.objects.create(user=self.user)
@@ -239,7 +316,7 @@ class OfferListViewSetTests(APITestCase):
 
 		response = self.client.patch(
 			url,
-			{"details": [{"id": basic_detail.pk, "price": "80.00"}]},
+			{"details": [{"offer_type": "basic", "price": "80.00"}]},
 			format="json",
 		)
 
@@ -250,6 +327,52 @@ class OfferListViewSetTests(APITestCase):
 		standard_detail.refresh_from_db()
 		self.assertEqual(basic_detail.price, Decimal("80.00"))
 		self.assertEqual(standard_detail.price, Decimal("400.00"))
+
+	def test_rejects_invalid_detail_type_updates(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+		self.expensive_offer.details.filter(offer_type="premium").delete()
+		invalid_details = [
+			[{"price": "80.00"}],
+			[{"id": self.expensive_offer.details.first().pk, "price": "80.00"}],
+			[{"offer_type": "premium", "price": "80.00"}],
+			[{"offer_type": "basic", "price": "80.00"}, {"offer_type": "basic", "price": "90.00"}],
+			[{"offer_type": "basic"}],
+		]
+
+		for details in invalid_details:
+			with self.subTest(details=details):
+				response = self.client.patch(url, {"details": details}, format="json")
+				self.assertEqual(response.status_code, 400)
+		self.assertEqual(self.expensive_offer.details.get(offer_type="basic").price, Decimal("250.00"))
+
+	def test_rejects_ambiguous_existing_detail_type(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		url = reverse("offers-detail", kwargs={"pk": self.expensive_offer.pk})
+		self.expensive_offer.details.filter(offer_type="standard").update(offer_type="basic")
+
+		response = self.client.patch(
+			url, {"details": [{"offer_type": "basic", "price": "80.00"}]}, format="json"
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(
+			set(self.expensive_offer.details.filter(offer_type="basic").values_list("price", flat=True)),
+			{Decimal("250.00"), Decimal("400.00")},
+		)
+
+	def test_rejects_creating_offer_with_duplicate_detail_types(self):
+		token = Token.objects.create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+		payload = self.offer_payload()
+		payload["details"][1]["offer_type"] = "basic"
+
+		response = self.client.post(self.url, payload, format="json")
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(Offer.objects.count(), 2)
 
 	def test_other_business_cannot_patch_or_delete_offer(self):
 		other_user = User.objects.create_user(

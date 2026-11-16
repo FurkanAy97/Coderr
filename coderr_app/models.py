@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -67,8 +68,8 @@ class OfferDetail(models.Model):
 
     offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="details")
     title = models.CharField(max_length=100)
-    revisions = models.PositiveIntegerField()
-    delivery_time_in_days = models.PositiveIntegerField()
+    revisions = models.IntegerField(validators=[MinValueValidator(-1)])
+    delivery_time_in_days = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     price = models.DecimalField(max_digits=10, decimal_places=2)
     features = models.JSONField(default=list)
     offer_type = models.CharField(max_length=20, choices=OFFER_TYPE_CHOICES)

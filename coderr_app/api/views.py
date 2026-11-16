@@ -14,6 +14,7 @@ from .pagination import OfferPagination
 from .permissions import IsBusinessProfile, OfferPermission
 from .serializer import (
     OfferDetailSerializer,
+    OfferReadSerializer,
     OfferSerializer,
     RegistrationSerializer,
     LoginSerializer,
@@ -198,6 +199,11 @@ class OfferViewSet(
 
     def perform_create(self, serializer):
         serializer.save(user_details=self.request.user.profile)
+        
+    def get_serializer_class(self):
+        if self.action in ("list", "retrieve"):
+            return OfferReadSerializer
+        return OfferSerializer
 
 
 class OfferDetailViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
