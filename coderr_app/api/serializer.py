@@ -93,7 +93,10 @@ class OfferDetailSerializer(serializers.ModelSerializer):
 
 
 class OfferDetailLinkSerializer(serializers.ModelSerializer):
-    url = serializers.HyperlinkedIdentityField(view_name="offerdetails-detail")
+    url = serializers.SerializerMethodField()
+
+    def get_url(self, obj):
+        return f"/offerdetails/{obj.id}/"
 
     class Meta:
         model = OfferDetail

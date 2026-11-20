@@ -143,7 +143,7 @@ class OfferListViewSetTests(APITestCase):
 			if offer["id"] == self.expensive_offer.pk
 		)
 		expected = {
-			detail.pk: "http://testserver" + reverse("offerdetails-detail", kwargs={"pk": detail.pk})
+			detail.pk: f"/offerdetails/{detail.pk}/"
 			for detail in self.expensive_offer.details.all()
 		}
 		for details in [list_offer["details"], detail_response.data["details"]]:
