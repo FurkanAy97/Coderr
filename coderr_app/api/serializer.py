@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework import serializers
 
-from coderr_app.models import Offer, OfferDetail, UserProfile
+from coderr_app.models import Offer, OfferDetail, Order, UserProfile
 
 
 class RegistrationSerializer(serializers.Serializer):
@@ -253,3 +253,12 @@ class OfferSerializer(serializers.ModelSerializer):
 
 class OfferReadSerializer(OfferSerializer):
     details = OfferDetailLinkSerializer(many=True, read_only=True)
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    
+    customer_user = serializers.IntegerField(source="customer_user.user_id", read_only=True)
+    business_user = serializers.IntegerField(source="business_user.user_id", read_only=True)
+    class Meta:
+        model = Order
+        fields = "__all__"

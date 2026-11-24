@@ -16,10 +16,11 @@ from .serializer import (
     OfferDetailSerializer,
     OfferReadSerializer,
     OfferSerializer,
+    OrderSerializer,
     RegistrationSerializer,
     LoginSerializer,
 )
-from coderr_app.models import Offer, OfferDetail, UserProfile
+from coderr_app.models import Offer, OfferDetail, Order, UserProfile
 
 
 class RegistrationView(APIView):
@@ -199,7 +200,7 @@ class OfferViewSet(
 
     def perform_create(self, serializer):
         serializer.save(user_details=self.request.user.profile)
-        
+
     def get_serializer_class(self):
         if self.action in ("list", "retrieve"):
             return OfferReadSerializer
@@ -212,3 +213,34 @@ class OfferDetailViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     throttle_classes = []
     queryset = OfferDetail.objects.select_related("offer")
     serializer_class = OfferDetailSerializer
+
+
+class OrderViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    throttle_classes = []
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    serializer_class = OrderSerializer
+
+    def get_queryset(self):
+        return Order.objects.select_related("customer_user__user", "business_user__user").order_by(
+            "-created_at",
+            "-pk",
+        )
+
+    def create(self, request, *args, **kwargs):
+        try:
+            offer_detail_id = request.data.get("offer_detail_id")
+            offer_detail = OfferDetail.objects.get(pk=offer_detail_id)
+        except OfferDetail.DoesNotExist:
+            return Response(
+                {"error": "Offer not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
