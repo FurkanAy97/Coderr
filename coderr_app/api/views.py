@@ -16,6 +16,7 @@ from .serializer import (
     OfferDetailSerializer,
     OfferReadSerializer,
     OfferSerializer,
+    OrderCreateSerializer,
     OrderSerializer,
     RegistrationSerializer,
     LoginSerializer,
@@ -236,11 +237,34 @@ class OrderViewSet(
         )
 
     def create(self, request, *args, **kwargs):
+        profile = getattr(request.user, "profile", None)
+        if profile is None or profile.user_type != "customer":
+            return Response(
+                {"error": "Only customers can create orders"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        input_serializer = OrderCreateSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
         try:
-            offer_detail_id = request.data.get("offer_detail_id")
-            offer_detail = OfferDetail.objects.get(pk=offer_detail_id)
+            offer_detail = OfferDetail.objects.select_related("offer__user_details").get(
+                pk=input_serializer.validated_data["offer_detail_id"]
+            )
         except OfferDetail.DoesNotExist:
             return Response(
-                {"error": "Offer not found"},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": "Offer detail not found"},
+                status=status.HTTP_404_NOT_FOUND,
             )
+
+        order = Order.objects.create(
+            customer_user=profile,
+            business_user=offer_detail.offer.user_details,
+            title=offer_detail.title,
+            revisions=offer_detail.revisions,
+            price=offer_detail.price,
+            delivery_time_in_days=offer_detail.delivery_time_in_days,
+            features=offer_detail.features,
+            offer_type=offer_detail.offer_type,
+        )
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

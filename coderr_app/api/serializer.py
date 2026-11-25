@@ -255,6 +255,10 @@ class OfferReadSerializer(OfferSerializer):
     details = OfferDetailLinkSerializer(many=True, read_only=True)
 
 
+class OrderCreateSerializer(serializers.Serializer):
+    offer_detail_id = serializers.IntegerField(min_value=1)
+
+
 class OrderSerializer(serializers.ModelSerializer):
     
     customer_user = serializers.IntegerField(source="customer_user.user_id", read_only=True)

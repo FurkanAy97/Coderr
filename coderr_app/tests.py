@@ -6,7 +6,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from coderr_app.api.serializer import OfferSerializer
-from coderr_app.models import Offer, OfferDetail, UserProfile
+from coderr_app.models import Offer, OfferDetail, Order, UserProfile
 
 
 class OfferSerializerTests(APITestCase):
@@ -449,6 +449,67 @@ class OfferListViewSetTests(APITestCase):
 				},
 			],
 		}
+
+
+class OrderCreateTests(APITestCase):
+	def setUp(self):
+		self.customer = User.objects.create_user(username="order_customer")
+		self.customer_profile = UserProfile.objects.create(user=self.customer, user_type="customer")
+		self.business = User.objects.create_user(username="order_business")
+		business_profile = UserProfile.objects.create(user=self.business, user_type="business")
+		offer = Offer.objects.create(title="Offer title", user_details=business_profile)
+		self.detail = OfferDetail.objects.create(
+			offer=offer,
+			title="Basic package",
+			revisions=-1,
+			delivery_time_in_days=5,
+			price=Decimal("125.50"),
+			features=["Logo"],
+			offer_type="basic",
+		)
+		self.url = reverse("orders-list")
+
+	def authenticate(self, user):
+		token = Token.objects.create(user=user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+	def test_customer_creates_order_from_offer_detail(self):
+		self.authenticate(self.customer)
+		response = self.client.post(self.url, {"offer_detail_id": self.detail.pk}, format="json")
+
+		self.assertEqual(response.status_code, 201)
+		order = Order.objects.get(pk=response.data["id"])
+		self.assertEqual(order.customer_user, self.customer_profile)
+		self.assertEqual(order.business_user.user, self.business)
+		self.assertEqual(order.title, "Basic package")
+		self.assertEqual(order.revisions, -1)
+		self.assertEqual(order.delivery_time_in_days, 5)
+		self.assertEqual(order.price, Decimal("125.50"))
+		self.assertEqual(order.features, ["Logo"])
+		self.assertEqual(order.offer_type, "basic")
+		self.assertEqual(order.status, "in_progress")
+		self.assertEqual(response.data["customer_user"], self.customer.pk)
+		self.assertEqual(response.data["business_user"], self.business.pk)
+
+	def test_invalid_and_missing_detail_ids(self):
+		self.authenticate(self.customer)
+		for payload, expected_status in [
+			({}, 400),
+			({"offer_detail_id": "abc"}, 400),
+			({"offer_detail_id": 0}, 400),
+			({"offer_detail_id": 999999}, 404),
+		]:
+			with self.subTest(payload=payload):
+				response = self.client.post(self.url, payload, format="json")
+				self.assertEqual(response.status_code, expected_status)
+		self.assertFalse(Order.objects.exists())
+
+	def test_only_authenticated_customers_can_create_orders(self):
+		payload = {"offer_detail_id": self.detail.pk}
+		self.assertEqual(self.client.post(self.url, payload, format="json").status_code, 401)
+		self.authenticate(self.business)
+		self.assertEqual(self.client.post(self.url, payload, format="json").status_code, 403)
+		self.assertFalse(Order.objects.exists())
 
 
 class ProfileViewTests(APITestCase):
